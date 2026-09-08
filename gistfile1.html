@@ -1,0 +1,959 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>♡</title>
+
+<!-- ============================================================
+     1. CSS — estética espacial romántica: negro, rosa, blanco.
+     ============================================================ -->
+<style>
+  :root{
+    --pink: #ff6fb3;
+    --pink-soft: #ffb8d9;
+    --magenta: #d94fb8;
+    --white: #ffffff;
+    --dark: #050308;
+  }
+
+  * { margin:0; padding:0; box-sizing:border-box; }
+
+  html, body{
+    width:100%; height:100%;
+    background: var(--dark);
+    overflow:hidden;
+    font-family: 'Georgia', 'Palatino Linotype', serif;
+    cursor: default;
+  }
+
+  /* Lienzo de Three.js ocupa toda la pantalla, detrás de todo */
+  #galaxy-canvas{
+    position:fixed;
+    inset:0;
+    display:block;
+    z-index:1;
+    cursor: grab;
+    touch-action: none; /* evita el scroll/zoom nativo para poder arrastrar y hacer pinch */
+  }
+  #galaxy-canvas.dragging{ cursor: grabbing; }
+
+  /* Viñeta oscura en los bordes para dar profundidad al espacio */
+  #vignette{
+    position:fixed;
+    inset:0;
+    pointer-events:none;
+    z-index:2;
+    background: radial-gradient(ellipse at center, rgba(0,0,0,0) 45%, rgba(0,0,0,0.55) 85%, rgba(0,0,0,0.85) 100%);
+  }
+
+  /* Texto central: "Nuestro universo" */
+  #center-title{
+    position:fixed;
+    left:50%; top:50%;
+    transform: translate(-50%, 60px);
+    z-index:3;
+    text-align:center;
+    pointer-events:none;
+    width: 90%;
+    max-width: 600px;
+  }
+
+  #center-title h1{
+    font-family: 'Brush Script MT', 'Segoe Script', cursive, 'Georgia', serif;
+    font-weight: 400;
+    font-style: italic;
+    font-size: clamp(22px, 5vw, 42px);
+    color: var(--white);
+    letter-spacing: 1px;
+    text-shadow:
+      0 0 12px rgba(255,111,179,0.9),
+      0 0 28px rgba(255,111,179,0.6),
+      0 0 46px rgba(217,79,184,0.4);
+    opacity: 0.95;
+  }
+
+  #center-title p{
+    margin-top:6px;
+    font-family: 'Georgia', serif;
+    font-size: clamp(10px, 1.6vw, 13px);
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--pink-soft);
+    opacity:0.55;
+  }
+
+  /* Mensaje flotante que aparece al hacer clic en un elemento */
+  #message-box{
+    position:fixed;
+    left:50%; top:38%;
+    transform: translate(-50%, -50%) scale(0.85);
+    z-index:5;
+    padding: 14px 26px;
+    background: rgba(10,4,10,0.55);
+    border: 1px solid rgba(255,184,217,0.35);
+    border-radius: 30px;
+    backdrop-filter: blur(6px);
+    color: var(--white);
+    font-size: clamp(14px, 2.4vw, 19px);
+    font-style: italic;
+    text-align:center;
+    text-shadow: 0 0 14px rgba(255,111,179,0.8);
+    box-shadow: 0 0 30px rgba(255,111,179,0.25);
+    opacity:0;
+    pointer-events:none;
+    transition: opacity 0.6s ease, transform 0.6s ease;
+    white-space: nowrap;
+  }
+  #message-box.show{
+    opacity:1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+
+  /* Pequeño texto de introducción, se desvanece a los pocos segundos */
+  #hint{
+    position:fixed;
+    bottom: 22px;
+    left:50%;
+    transform: translateX(-50%);
+    z-index:4;
+    color: rgba(255,255,255,0.55);
+    font-size: clamp(10px, 1.8vw, 12px);
+    letter-spacing: 1.5px;
+    text-align:center;
+    transition: opacity 1.5s ease;
+    pointer-events:none;
+  }
+  #hint.fade{ opacity:0; }
+
+  /* Corazones que salen volando al hacer clic (DOM, sencillos y ligeros) */
+  .burst-heart{
+    position:fixed;
+    z-index:6;
+    pointer-events:none;
+    font-size: 18px;
+    color: var(--pink);
+    text-shadow: 0 0 10px rgba(255,111,179,0.9);
+    animation: floatUp 1.4s ease-out forwards;
+    will-change: transform, opacity;
+  }
+  @keyframes floatUp{
+    0%   { opacity:1; transform: translate(0,0) scale(0.6) rotate(0deg); }
+    15%  { opacity:1; transform: translate(var(--dx0), var(--dy0)) scale(1) rotate(var(--rot)); }
+    100% { opacity:0; transform: translate(var(--dx1), var(--dy1)) scale(0.4) rotate(var(--rot)); }
+  }
+
+  /* Pantalla de carga breve, para que las fuentes/escena se asienten */
+  #loader{
+    position:fixed; inset:0; background:var(--dark);
+    z-index:10; display:flex; align-items:center; justify-content:center;
+    color: var(--pink-soft); font-size:13px; letter-spacing:3px; text-transform:uppercase;
+    transition: opacity 1s ease;
+  }
+  #loader.hide{ opacity:0; pointer-events:none; }
+
+  @media (prefers-reduced-motion: reduce){
+    .burst-heart{ animation: none; opacity:0; }
+  }
+</style>
+</head>
+<body>
+
+<div id="loader">Encendiendo estrellas…</div>
+
+<canvas id="galaxy-canvas"></canvas>
+<div id="vignette"></div>
+
+<div id="center-title">
+  <h1>eles mi mundo celete♡ </h1>
+  <p>toca lo que encuentres</p>
+</div>
+<div id="message-box"></div>
+<div id="hint">arrastra para girar 360° · toca un corazón, flor o frase</div>
+
+<!-- Three.js vía CDN (r128, sin módulos, compatible con archivo único) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+<!-- ============================================================
+     3. JAVASCRIPT — construcción de la galaxia y su interacción
+     ============================================================ -->
+<script>
+(function(){
+
+  "use strict";
+
+  /* -----------------------------------------------------------
+     0. CONFIGURACIÓN Y DETECCIÓN DE DISPOSITIVO
+     Reducimos partículas en pantallas pequeñas para el rendimiento.
+  ----------------------------------------------------------- */
+  const isMobile = window.innerWidth < 768;
+  const PIXEL_RATIO = Math.min(window.devicePixelRatio || 1, isMobile ? 2 : 2.5);
+
+  const COUNTS = {
+    stars:    isMobile ? 1400 : 3800,
+    dust:     isMobile ? 900  : 2600,
+    hearts:   isMobile ? 14   : 26,
+    flowers:  isMobile ? 10   : 18,
+    phrases:  isMobile ? 12   : 20,
+    sparkles: isMobile ? 300  : 700
+  };
+    
+  const LOVE_MESSAGES = [
+    "Eres mi universo Celeste❤️",
+    "tu haces que mi mundo brille💗",
+    "haces que mi vida sea mejor♡",
+    "TE AMOOOOOO♡",
+    "tuve suerte en encontrar una estrella entre tantos planetas",
+    "tas dando vuelta como el sol kabron el sol no da vuelta😲🗣️🔥",
+    "eres la estrella que mas ilumina mis noches oscuras",
+    "TE AMO CELESTE ERES EL AMOR DE MI VIDA💗",
+
+
+  ];
+
+  const PHRASES = [
+    "TIAMOOO:P", "eles la mejol", "no me arrepiento de conocerte", "♡♡♡♡",
+    "eles mi lugar segulo", "eles persona favorita", "Contigo todo es mejor",
+    "Gracias por estar en mi vida", "Eles muy especial mi amooll", "kielo kasarme ccontigo",
+    "Siempre juntos", "♡♡♡♡", "eles supel helmoshaa","eles la mejol",
+    "Te elegiría una y mil veces", "Mi life", "Mi galaxia eles tu",
+    "Me haces supel feliz :>", "♡♡♡♡", "Nunca quiero que esto acabe",
+    "TE AMO MUXIXIXIXIXMO MI NIÑA♡"
+  ];
+
+  /* -----------------------------------------------------------
+     1. ESCENA, CÁMARA Y RENDERIZADOR
+  ----------------------------------------------------------- */
+  const canvas = document.getElementById('galaxy-canvas');
+  const scene = new THREE.Scene();
+  scene.fog = new THREE.FogExp2(0x03010a, 0.0018);
+
+  const camera = new THREE.PerspectiveCamera(
+    55, window.innerWidth / window.innerHeight, 1, 4000
+  );
+  // Cámara elevada mirando hacia abajo ~30° para ver el disco de la galaxia.
+  const CAMERA_BASE = new THREE.Vector3(0, 170, 300);
+  camera.position.copy(CAMERA_BASE);
+  camera.lookAt(0, 0, 0);
+
+  const renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: false });
+  renderer.setPixelRatio(PIXEL_RATIO);
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setClearColor(0x03010a, 1);
+
+  /* -----------------------------------------------------------
+     2. GENERADORES DE TEXTURAS (canvas 2D → THREE.Texture)
+     Todo se dibuja a mano: sin imágenes externas.
+  ----------------------------------------------------------- */
+
+  // Punto suave brillante, usado para estrellas y polvo cósmico.
+  function makeGlowDotTexture(colorInner, colorOuter, size){
+    size = size || 64;
+    const c = document.createElement('canvas');
+    c.width = c.height = size;
+    const ctx = c.getContext('2d');
+    const g = ctx.createRadialGradient(size/2, size/2, 0, size/2, size/2, size/2);
+    g.addColorStop(0, colorInner);
+    g.addColorStop(0.4, colorOuter);
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, size, size);
+    const tex = new THREE.CanvasTexture(c);
+    tex.needsUpdate = true;
+    return tex;
+  }
+
+  // Corazón dibujado con curvas bézier + resplandor.
+  function makeHeartTexture(color, glow, size){
+    size = size || 128;
+    const c = document.createElement('canvas');
+    c.width = c.height = size;
+    const ctx = c.getContext('2d');
+    ctx.translate(size/2, size/2 + size*0.08);
+    const s = size * 0.032;
+
+    ctx.shadowColor = glow;
+    ctx.shadowBlur = size * 0.22;
+    ctx.fillStyle = color;
+
+    ctx.beginPath();
+    ctx.moveTo(0, 4*s);
+    ctx.bezierCurveTo(-2*s, -2*s, -9*s, -2*s, -9*s, 4*s);
+    ctx.bezierCurveTo(-9*s, 9*s, -4*s, 12*s, 0, 17*s);
+    ctx.bezierCurveTo(4*s, 12*s, 9*s, 9*s, 9*s, 4*s);
+    ctx.bezierCurveTo(9*s, -2*s, 2*s, -2*s, 0, 4*s);
+    ctx.closePath();
+    ctx.fill();
+    // segunda pasada para intensificar el brillo del núcleo
+    ctx.shadowBlur = size * 0.08;
+    ctx.fill();
+
+    const tex = new THREE.CanvasTexture(c);
+    tex.needsUpdate = true;
+    return tex;
+  }
+
+  // Flor de cinco pétalos con centro brillante.
+  function makeFlowerTexture(color, centerColor, glow, size){
+    size = size || 128;
+    const c = document.createElement('canvas');
+    c.width = c.height = size;
+    const ctx = c.getContext('2d');
+    const cx = size/2, cy = size/2;
+    const petalLen = size * 0.30;
+    const petalW = size * 0.16;
+
+    ctx.shadowColor = glow;
+    ctx.shadowBlur = size * 0.16;
+    ctx.fillStyle = color;
+
+    for(let i=0;i<5;i++){
+      const angle = (i / 5) * Math.PI * 2;
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(angle);
+      ctx.beginPath();
+      ctx.ellipse(0, -petalLen*0.55, petalW/2, petalLen/2, 0, 0, Math.PI*2);
+      ctx.fill();
+      ctx.restore();
+    }
+    ctx.shadowBlur = size * 0.1;
+    ctx.fillStyle = centerColor;
+    ctx.beginPath();
+    ctx.arc(cx, cy, size*0.07, 0, Math.PI*2);
+    ctx.fill();
+
+    const tex = new THREE.CanvasTexture(c);
+    tex.needsUpdate = true;
+    return tex;
+  }
+
+  // Texto romántico como textura (permite tamaños y profundidades variables).
+  function makeTextTexture(text, fontPx, color, glow){
+    const paddingX = 40;
+    const c = document.createElement('canvas');
+    const ctx = c.getContext('2d');
+    ctx.font = `italic ${fontPx}px Georgia, 'Palatino Linotype', serif`;
+    const metrics = ctx.measureText(text);
+    c.width = Math.ceil(metrics.width) + paddingX;
+    c.height = Math.ceil(fontPx * 1.8);
+
+    ctx.font = `italic ${fontPx}px Georgia, 'Palatino Linotype', serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.shadowColor = glow;
+    ctx.shadowBlur = fontPx * 0.35;
+    ctx.fillStyle = color;
+    ctx.fillText(text, c.width/2, c.height/2);
+    // segunda pasada, resplandor más intenso y suave
+    ctx.shadowBlur = fontPx * 0.15;
+    ctx.fillText(text, c.width/2, c.height/2);
+
+    const tex = new THREE.CanvasTexture(c);
+    tex.needsUpdate = true;
+    return { texture: tex, aspect: c.width / c.height };
+  }
+
+  // Textura radial grande para el resplandor del agujero negro.
+  function makeAuraTexture(){
+    const size = 512;
+    const c = document.createElement('canvas');
+    c.width = c.height = size;
+    const ctx = c.getContext('2d');
+    const g = ctx.createRadialGradient(size/2, size/2, 0, size/2, size/2, size/2);
+    g.addColorStop(0,   'rgba(255,220,240,0.95)');
+    g.addColorStop(0.18,'rgba(255,140,205,0.55)');
+    g.addColorStop(0.4, 'rgba(217,79,184,0.22)');
+    g.addColorStop(0.7, 'rgba(120,20,90,0.06)');
+    g.addColorStop(1,   'rgba(0,0,0,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0,0,size,size);
+    const tex = new THREE.CanvasTexture(c);
+    tex.needsUpdate = true;
+    return tex;
+  }
+
+  /* -----------------------------------------------------------
+     3. CAMPO DE ESTRELLAS (fondo lejano, casi estático)
+  ----------------------------------------------------------- */
+  const galaxyGroup = new THREE.Group();
+  galaxyGroup.rotation.x = -0.45; // inclinación del disco galáctico
+  scene.add(galaxyGroup);
+
+  const starTex = makeGlowDotTexture('rgba(255,255,255,1)', 'rgba(255,220,240,0.7)', 64);
+
+  function buildStarfield(){
+    const geo = new THREE.BufferGeometry();
+    const positions = new Float32Array(COUNTS.stars * 3);
+    const sizes = new Float32Array(COUNTS.stars);
+    const phases = new Float32Array(COUNTS.stars);
+
+    for(let i=0;i<COUNTS.stars;i++){
+      // distribución esférica amplia alrededor de toda la escena
+      const radius = 500 + Math.random() * 1400;
+      const theta = Math.random() * Math.PI * 2;
+      const phi = Math.acos((Math.random() * 2) - 1);
+      positions[i*3]   = radius * Math.sin(phi) * Math.cos(theta);
+      positions[i*3+1] = radius * Math.cos(phi) * 0.6;
+      positions[i*3+2] = radius * Math.sin(phi) * Math.sin(theta);
+      sizes[i] = Math.random() * 2.6 + 0.6;
+      phases[i] = Math.random() * Math.PI * 2;
+    }
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geo.setAttribute('aSize', new THREE.BufferAttribute(sizes, 1));
+    geo.setAttribute('aPhase', new THREE.BufferAttribute(phases, 1));
+
+    // Material con shader simple para el parpadeo (twinkle) de las estrellas.
+    const mat = new THREE.ShaderMaterial({
+      uniforms: {
+        uTime: { value: 0 },
+        uTex: { value: starTex }
+      },
+      vertexShader: `
+        attribute float aSize;
+        attribute float aPhase;
+        uniform float uTime;
+        varying float vTwinkle;
+        void main(){
+          vTwinkle = 0.55 + 0.45 * sin(uTime * 1.5 + aPhase);
+          vec4 mv = modelViewMatrix * vec4(position, 1.0);
+          gl_PointSize = aSize * (300.0 / -mv.z);
+          gl_Position = projectionMatrix * mv;
+        }
+      `,
+      fragmentShader: `
+        uniform sampler2D uTex;
+        varying float vTwinkle;
+        void main(){
+          vec4 tex = texture2D(uTex, gl_PointCoord);
+          gl_FragColor = vec4(tex.rgb, tex.a * vTwinkle);
+        }
+      `,
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending
+    });
+
+    return new THREE.Points(geo, mat);
+  }
+
+  const starfield = buildStarfield();
+  scene.add(starfield); // fuera del grupo giratorio: da sensación de profundidad fija
+
+  /* -----------------------------------------------------------
+     4. POLVO CÓSMICO / DISCO DE PARTÍCULAS DE LA GALAXIA
+     Miles de puntos rosa/blanco formando el disco elíptico.
+  ----------------------------------------------------------- */
+  const dustTex = makeGlowDotTexture('rgba(255,200,230,0.95)', 'rgba(255,110,180,0.5)', 64);
+
+  function buildGalaxyDust(){
+    const geo = new THREE.BufferGeometry();
+    const positions = new Float32Array(COUNTS.dust * 3);
+    const sizes = new Float32Array(COUNTS.dust);
+    const colors = new Float32Array(COUNTS.dust * 3);
+
+    const colorA = new THREE.Color(0xff8fc7); // rosa intenso
+    const colorB = new THREE.Color(0xffffff); // blanco
+    const colorC = new THREE.Color(0xd94fb8); // magenta
+
+    for(let i=0;i<COUNTS.dust;i++){
+      // distribución en espiral suave dentro de un disco
+      const armAngle = Math.random() * Math.PI * 2;
+      const radius = Math.pow(Math.random(), 0.5) * 260 + 20;
+      const spiral = armAngle + radius * 0.012;
+      const spread = (Math.random() - 0.5) * 18;
+
+      positions[i*3]   = Math.cos(spiral) * radius + spread;
+      positions[i*3+1] = (Math.random() - 0.5) * 6 * (radius/260);
+      positions[i*3+2] = Math.sin(spiral) * radius + spread;
+
+      sizes[i] = Math.random() * 2.2 + 0.5;
+
+      const mixColor = Math.random();
+      const col = mixColor < 0.5
+        ? colorA.clone().lerp(colorB, Math.random())
+        : colorB.clone().lerp(colorC, Math.random() * 0.6);
+      colors[i*3] = col.r; colors[i*3+1] = col.g; colors[i*3+2] = col.b;
+    }
+
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geo.setAttribute('aSize', new THREE.BufferAttribute(sizes, 1));
+    geo.setAttribute('aColor', new THREE.BufferAttribute(colors, 3));
+
+    const mat = new THREE.ShaderMaterial({
+      uniforms: { uTex: { value: dustTex } },
+      vertexShader: `
+        attribute float aSize;
+        attribute vec3 aColor;
+        varying vec3 vColor;
+        void main(){
+          vColor = aColor;
+          vec4 mv = modelViewMatrix * vec4(position, 1.0);
+          gl_PointSize = aSize * (260.0 / -mv.z);
+          gl_Position = projectionMatrix * mv;
+        }
+      `,
+      fragmentShader: `
+        uniform sampler2D uTex;
+        varying vec3 vColor;
+        void main(){
+          vec4 tex = texture2D(uTex, gl_PointCoord);
+          gl_FragColor = vec4(vColor * tex.rgb, tex.a * 0.85);
+        }
+      `,
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending
+    });
+
+    return new THREE.Points(geo, mat);
+  }
+
+  const galaxyDust = buildGalaxyDust();
+  galaxyGroup.add(galaxyDust);
+
+  /* -----------------------------------------------------------
+     5. AGUJERO NEGRO CENTRAL + ANILLO + AURA
+  ----------------------------------------------------------- */
+  const blackHoleGroup = new THREE.Group();
+  galaxyGroup.add(blackHoleGroup);
+
+  // Núcleo oscuro
+  const coreGeo = new THREE.SphereGeometry(14, 48, 48);
+  const coreMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
+  const core = new THREE.Mesh(coreGeo, coreMat);
+  blackHoleGroup.add(core);
+
+  // Aura de resplandor (sprite plano detrás/alrededor del núcleo)
+  const auraTex = makeAuraTexture();
+  const auraMat = new THREE.SpriteMaterial({
+    map: auraTex, color: 0xffffff, transparent: true,
+    blending: THREE.AdditiveBlending, depthWrite: false
+  });
+  const aura = new THREE.Sprite(auraMat);
+  aura.scale.set(140, 140, 1);
+  blackHoleGroup.add(aura);
+
+  // Anillo brillante rosa/blanco alrededor del núcleo
+  const ringGeo = new THREE.TorusGeometry(22, 1.6, 24, 96);
+  const ringMat = new THREE.MeshBasicMaterial({
+    color: 0xffdff0, transparent: true, opacity: 0.95
+  });
+  const ring = new THREE.Mesh(ringGeo, ringMat);
+  ring.rotation.x = Math.PI / 2;
+  blackHoleGroup.add(ring);
+
+  // Segundo anillo, más ancho y tenue, para dar profundidad al halo
+  const ring2Geo = new THREE.TorusGeometry(27, 0.6, 16, 96);
+  const ring2Mat = new THREE.MeshBasicMaterial({
+    color: 0xff8fc7, transparent: true, opacity: 0.55
+  });
+  const ring2 = new THREE.Mesh(ring2Geo, ring2Mat);
+  ring2.rotation.x = Math.PI / 2;
+  blackHoleGroup.add(ring2);
+
+  // Partículas de energía orbitando muy cerca del agujero negro
+  function buildAccretionParticles(){
+    const count = isMobile ? 350 : 800;
+    const geo = new THREE.BufferGeometry();
+    const positions = new Float32Array(count * 3);
+    const sizes = new Float32Array(count);
+    const angles = new Float32Array(count);
+    const radii = new Float32Array(count);
+
+    for(let i=0;i<count;i++){
+      const radius = 18 + Math.random() * 26;
+      const angle = Math.random() * Math.PI * 2;
+      radii[i] = radius;
+      angles[i] = angle;
+      positions[i*3]   = Math.cos(angle) * radius;
+      positions[i*3+1] = (Math.random()-0.5) * 3;
+      positions[i*3+2] = Math.sin(angle) * radius;
+      sizes[i] = Math.random() * 1.8 + 0.4;
+    }
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geo.setAttribute('aSize', new THREE.BufferAttribute(sizes, 1));
+
+    const mat = new THREE.PointsMaterial({
+      map: dustTex, color: 0xffc4e6, size: 2.4, transparent: true,
+      opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false,
+      sizeAttenuation: true
+    });
+    const points = new THREE.Points(geo, mat);
+    points.userData = { angles, radii, count };
+    return points;
+  }
+  const accretion = buildAccretionParticles();
+  blackHoleGroup.add(accretion);
+
+  /* -----------------------------------------------------------
+     6. ELEMENTOS INTERACTIVOS: corazones, flores y frases
+     Se guardan en un arreglo común para animarlos y para el raycaster.
+  ----------------------------------------------------------- */
+  const interactiveObjects = []; // { mesh, angle, radius, speed, yOff, bobPhase, baseScale, kind, message }
+
+  const heartTexA = makeHeartTexture('#ff6fb3', '#ff9fd0');
+  const heartTexB = makeHeartTexture('#ffffff', '#ffd6ec');
+  const flowerTex = makeFlowerTexture('#ffb8d9', '#ffffff', '#ff9fd0');
+
+  function addOrbitingSprite(texture, kind, radiusRange, sizeRange, opts){
+    opts = opts || {};
+    const mat = new THREE.SpriteMaterial({
+      map: texture, transparent: true,
+      blending: THREE.NormalBlending, depthWrite: false,
+      opacity: opts.opacity !== undefined ? opts.opacity : 1
+    });
+    const sprite = new THREE.Sprite(mat);
+
+    const radius = radiusRange[0] + Math.random() * (radiusRange[1] - radiusRange[0]);
+    const angle = Math.random() * Math.PI * 2;
+    const size = sizeRange[0] + Math.random() * (sizeRange[1] - sizeRange[0]);
+    const yOff = (Math.random() - 0.5) * 30;
+
+    sprite.scale.set(size, size, 1);
+    sprite.position.set(Math.cos(angle) * radius, yOff, Math.sin(angle) * radius);
+    galaxyGroup.add(sprite);
+
+    interactiveObjects.push({
+      mesh: sprite,
+      angle: angle,
+      radius: radius,
+      speed: (0.04 + Math.random() * 0.05) * (Math.random() < 0.5 ? 1 : -1) * 0.3,
+      yOff: yOff,
+      bobPhase: Math.random() * Math.PI * 2,
+      baseScale: size,
+      kind: kind,
+      message: opts.message || LOVE_MESSAGES[Math.floor(Math.random() * LOVE_MESSAGES.length)]
+    });
+    return sprite;
+  }
+
+  // Corazones flotando en distintas órbitas y profundidades
+  for(let i=0;i<COUNTS.hearts;i++){
+    const far = Math.random() < 0.35; // algunos más lejanos/desenfocados
+    addOrbitingSprite(
+      Math.random() < 0.5 ? heartTexA : heartTexB,
+      'heart',
+      [40, 230],
+      far ? [6, 10] : [10, 20],
+      { opacity: far ? 0.55 : 1 }
+    );
+  }
+
+  // Flores rosas
+  for(let i=0;i<COUNTS.flowers;i++){
+    const far = Math.random() < 0.35;
+    addOrbitingSprite(
+      flowerTex, 'flower',
+      [50, 240],
+      far ? [7, 11] : [11, 18],
+      { opacity: far ? 0.5 : 0.95 }
+    );
+  }
+
+  // Frases románticas distribuidas por toda la galaxia
+  const phraseColors = ['#ffffff', '#ffd6ec', '#ff9fd0'];
+  PHRASES.forEach(function(text){
+    const fontPx = 34 + Math.floor(Math.random() * 30); // tamaños variados
+    const color = phraseColors[Math.floor(Math.random() * phraseColors.length)];
+    const built = makeTextTexture(text, fontPx, color, '#ff6fb3');
+    const height = 16 + Math.random() * 10;
+    const width = height * built.aspect;
+
+    const mat = new THREE.SpriteMaterial({
+      map: built.texture, transparent: true, depthWrite: false,
+      opacity: 0.35 + Math.random() * 0.5
+    });
+    const sprite = new THREE.Sprite(mat);
+    sprite.scale.set(width, height, 1);
+
+    const radius = 60 + Math.random() * 220;
+    const angle = Math.random() * Math.PI * 2;
+    const yOff = (Math.random() - 0.5) * 50;
+    sprite.position.set(Math.cos(angle) * radius, yOff, Math.sin(angle) * radius);
+    galaxyGroup.add(sprite);
+
+    interactiveObjects.push({
+      mesh: sprite, angle: angle, radius: radius,
+      speed: (0.03 + Math.random() * 0.04) * (Math.random() < 0.5 ? 1 : -1) * 0.3,
+      yOff: yOff, bobPhase: Math.random() * Math.PI * 2,
+      baseScale: height, kind: 'phrase',
+      message: LOVE_MESSAGES[Math.floor(Math.random() * LOVE_MESSAGES.length)],
+      widthRatio: built.aspect
+    });
+  });
+
+  // Pequeñas partículas/destellos extra (sensación de energía difusa)
+  const sparkleTex = makeGlowDotTexture('rgba(255,255,255,1)', 'rgba(255,180,220,0.7)', 32);
+  function buildSparkles(){
+    const geo = new THREE.BufferGeometry();
+    const positions = new Float32Array(COUNTS.sparkles * 3);
+    for(let i=0;i<COUNTS.sparkles;i++){
+      const radius = 30 + Math.random() * 260;
+      const angle = Math.random() * Math.PI * 2;
+      positions[i*3]   = Math.cos(angle) * radius;
+      positions[i*3+1] = (Math.random()-0.5) * 60;
+      positions[i*3+2] = Math.sin(angle) * radius;
+    }
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    const mat = new THREE.PointsMaterial({
+      map: sparkleTex, color: 0xffffff, size: 2.2, transparent: true,
+      opacity: 0.6, blending: THREE.AdditiveBlending, depthWrite: false
+    });
+    return new THREE.Points(geo, mat);
+  }
+  const sparkles = buildSparkles();
+  galaxyGroup.add(sparkles);
+
+  /* -----------------------------------------------------------
+     7. INTERACCIÓN: órbita libre de 360° (arrastrar) + zoom
+     (rueda del mouse / pellizco en pantallas táctiles) + clic
+  ----------------------------------------------------------- */
+
+  // Coordenadas esféricas de la cámara alrededor del centro de la galaxia.
+  const radius0 = CAMERA_BASE.length();
+  const orbit = {
+    theta: Math.atan2(CAMERA_BASE.x, CAMERA_BASE.z),  // ángulo horizontal (0 → 360°, sin límite)
+    phi: Math.acos(CAMERA_BASE.y / radius0),           // ángulo vertical (con límite para no invertir la vista)
+    radius: radius0
+  };
+  const orbitTarget = { theta: orbit.theta, phi: orbit.phi, radius: orbit.radius };
+  const ZOOM_MIN = 90, ZOOM_MAX = 620;
+  const PHI_MIN = 0.25, PHI_MAX = Math.PI - 0.35;
+
+  function clamp(v, min, max){ return Math.max(min, Math.min(max, v)); }
+
+  let isDragging = false, dragMoved = false;
+  let lastX = 0, lastY = 0;
+  const DRAG_THRESHOLD = 4; // px — por debajo de esto, se considera "clic" y no arrastre
+
+  function dragStart(x, y){
+    isDragging = true; dragMoved = false;
+    lastX = x; lastY = y;
+    canvas.classList.add('dragging');
+  }
+  function dragMove(x, y){
+    if(!isDragging) return;
+    const dx = x - lastX, dy = y - lastY;
+    if(Math.abs(dx) + Math.abs(dy) > DRAG_THRESHOLD) dragMoved = true;
+    // Arrastrar horizontalmente da la vuelta completa (360°), sin límite.
+    orbitTarget.theta -= dx * 0.006;
+    // Arrastrar verticalmente inclina la vista, con límite para no voltear la cámara.
+    orbitTarget.phi = clamp(orbitTarget.phi - dy * 0.006, PHI_MIN, PHI_MAX);
+    lastX = x; lastY = y;
+  }
+  function dragEnd(x, y){
+    isDragging = false;
+    canvas.classList.remove('dragging');
+    if(!dragMoved){ onClick(x, y); } // fue un toque/clic, no un arrastre
+  }
+  function zoomBy(delta){
+    orbitTarget.radius = clamp(orbitTarget.radius + delta, ZOOM_MIN, ZOOM_MAX);
+  }
+
+  // --- Mouse ---
+  canvas.addEventListener('mousedown', function(e){ dragStart(e.clientX, e.clientY); });
+  window.addEventListener('mousemove', function(e){ dragMove(e.clientX, e.clientY); }, { passive: true });
+  window.addEventListener('mouseup', function(e){ if(isDragging) dragEnd(e.clientX, e.clientY); });
+  canvas.addEventListener('wheel', function(e){
+    e.preventDefault();
+    zoomBy(e.deltaY * 0.35);
+  }, { passive: false });
+
+  // --- Táctil: un dedo para girar 360°, dos dedos (pellizco) para zoom ---
+  let pinchStartDist = 0, pinchStartRadius = 0;
+  function touchDistance(touches){
+    const dx = touches[0].clientX - touches[1].clientX;
+    const dy = touches[0].clientY - touches[1].clientY;
+    return Math.sqrt(dx*dx + dy*dy);
+  }
+  canvas.addEventListener('touchstart', function(e){
+    if(e.touches.length === 1){
+      dragStart(e.touches[0].clientX, e.touches[0].clientY);
+    } else if(e.touches.length === 2){
+      isDragging = false;
+      pinchStartDist = touchDistance(e.touches);
+      pinchStartRadius = orbitTarget.radius;
+    }
+  }, { passive: true });
+  canvas.addEventListener('touchmove', function(e){
+    if(e.touches.length === 1){
+      dragMove(e.touches[0].clientX, e.touches[0].clientY);
+    } else if(e.touches.length === 2){
+      const dist = touchDistance(e.touches);
+      const scale = pinchStartDist / Math.max(dist, 1);
+      orbitTarget.radius = clamp(pinchStartRadius * scale, ZOOM_MIN, ZOOM_MAX);
+    }
+    e.preventDefault();
+  }, { passive: false });
+  canvas.addEventListener('touchend', function(e){
+    if(e.changedTouches && e.changedTouches[0] && isDragging){
+      dragEnd(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
+    }
+    isDragging = false;
+    canvas.classList.remove('dragging');
+  });
+
+  // Raycaster para detectar clic sobre corazones / flores / frases
+  const raycaster = new THREE.Raycaster();
+  raycaster.params.Sprite = { threshold: 2 };
+  const messageBox = document.getElementById('message-box');
+  let messageTimeout = null;
+
+  function showMessage(text){
+    clearTimeout(messageTimeout);
+    messageBox.textContent = text;
+    messageBox.classList.add('show');
+    messageTimeout = setTimeout(function(){
+      messageBox.classList.remove('show');
+    }, 2200);
+  }
+
+  // Corazones DOM que salen disparados del punto donde se hizo clic
+  function spawnHeartBurst(x, y){
+    const n = 7;
+    for(let i=0;i<n;i++){
+      const el = document.createElement('div');
+      el.className = 'burst-heart';
+      el.textContent = Math.random() < 0.5 ? '♡' : '💗';
+      const angle = (Math.PI * 2 * i) / n + Math.random() * 0.5;
+      const dist0 = 20 + Math.random() * 10;
+      const dist1 = 60 + Math.random() * 50;
+      el.style.left = x + 'px';
+      el.style.top = y + 'px';
+      el.style.setProperty('--dx0', Math.cos(angle) * dist0 + 'px');
+      el.style.setProperty('--dy0', (Math.sin(angle) * dist0 - 10) + 'px');
+      el.style.setProperty('--dx1', Math.cos(angle) * dist1 + 'px');
+      el.style.setProperty('--dy1', (Math.sin(angle) * dist1 - 70) + 'px');
+      el.style.setProperty('--rot', (Math.random() * 60 - 30) + 'deg');
+      document.body.appendChild(el);
+      setTimeout(function(){ el.remove(); }, 1500);
+    }
+  }
+
+  function onClick(clientX, clientY){
+    raycaster.setFromCamera(
+      { x: (clientX / window.innerWidth) * 2 - 1, y: -(clientY / window.innerHeight) * 2 + 1 },
+      camera
+    );
+    const meshes = interactiveObjects.map(function(o){ return o.mesh; });
+    const hits = raycaster.intersectObjects(meshes, false);
+    if(hits.length > 0){
+      const hitMesh = hits[0].object;
+      const obj = interactiveObjects.find(function(o){ return o.mesh === hitMesh; });
+      if(obj){
+        showMessage(obj.message);
+        spawnHeartBurst(clientX, clientY);
+        // pequeño "pulso" de escala al elemento tocado
+        obj.pulse = 1.0;
+      }
+    }
+  }
+  // (el clic/toque real se dispara desde dragEnd cuando no hubo arrastre)
+
+  /* -----------------------------------------------------------
+     8. REDIMENSIONADO RESPONSIVE
+  ----------------------------------------------------------- */
+  window.addEventListener('resize', function(){
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+
+  /* -----------------------------------------------------------
+     9. BUCLE DE ANIMACIÓN
+     Movimiento lento y elegante: rotación del disco, órbitas,
+     flotación de flores, parpadeo de estrellas, pulso del anillo.
+  ----------------------------------------------------------- */
+  const clock = new THREE.Clock();
+
+  function animate(){
+    requestAnimationFrame(animate);
+    const dt = Math.min(clock.getDelta(), 0.05);
+    const t = clock.elapsedTime;
+
+    // Rotación lenta y constante de toda la galaxia
+    galaxyGroup.rotation.y += dt * 0.045;
+
+    // Parpadeo de estrellas (shader)
+    starfield.material.uniforms.uTime.value = t;
+
+    // Pulso del agujero negro (anillo + aura)
+    const pulse = 1 + Math.sin(t * 1.1) * 0.045;
+    ring.scale.set(pulse, pulse, pulse);
+    ring2.scale.set(1 + Math.sin(t * 1.1 + 0.6) * 0.06, 1 + Math.sin(t*1.1+0.6)*0.06, 1);
+    auraMat.opacity = 0.75 + Math.sin(t * 1.3) * 0.15;
+    aura.scale.set(140 + Math.sin(t*1.1)*8, 140 + Math.sin(t*1.1)*8, 1);
+    blackHoleGroup.rotation.y += dt * 0.15;
+
+    // Partículas de energía cercanas al agujero negro (giro más rápido)
+    const acc = accretion.geometry.attributes.position.array;
+    const accData = accretion.userData;
+    for(let i=0;i<accData.count;i++){
+      accData.angles[i] += dt * (0.6 + (30/accData.radii[i]) * 0.4);
+      acc[i*3]   = Math.cos(accData.angles[i]) * accData.radii[i];
+      acc[i*3+2] = Math.sin(accData.angles[i]) * accData.radii[i];
+    }
+    accretion.geometry.attributes.position.needsUpdate = true;
+
+    // Órbitas de corazones, flores y frases
+    for(let i=0;i<interactiveObjects.length;i++){
+      const o = interactiveObjects[i];
+      o.angle += dt * o.speed;
+      const bob = Math.sin(t * 0.6 + o.bobPhase) * 4;
+      o.mesh.position.set(
+        Math.cos(o.angle) * o.radius,
+        o.yOff + bob,
+        Math.sin(o.angle) * o.radius
+      );
+
+      // Pulso suave al ser clicado, luego vuelve a su tamaño normal
+      let scale = o.baseScale;
+      if(o.pulse && o.pulse > 0){
+        scale = o.baseScale * (1 + o.pulse * 0.5);
+        o.pulse -= dt * 1.8;
+      }
+      if(o.kind === 'phrase'){
+        o.mesh.scale.set(scale * o.widthRatio, scale, 1);
+      } else {
+        o.mesh.scale.set(scale, scale, 1);
+      }
+    }
+
+    // Suavizado (damping) hacia el objetivo de órbita: sensación fluida, no brusca.
+    orbit.theta += (orbitTarget.theta - orbit.theta) * 0.08;
+    orbit.phi += (orbitTarget.phi - orbit.phi) * 0.08;
+    orbit.radius += (orbitTarget.radius - orbit.radius) * 0.08;
+
+    // Coordenadas esféricas → posición cartesiana de la cámara.
+    camera.position.x = orbit.radius * Math.sin(orbit.phi) * Math.sin(orbit.theta);
+    camera.position.y = orbit.radius * Math.cos(orbit.phi);
+    camera.position.z = orbit.radius * Math.sin(orbit.phi) * Math.cos(orbit.theta);
+    camera.lookAt(0, -10, 0);
+
+    renderer.render(scene, camera);
+  }
+
+  /* -----------------------------------------------------------
+     10. INICIO
+  ----------------------------------------------------------- */
+  animate();
+
+  window.addEventListener('load', function(){
+    setTimeout(function(){
+      document.getElementById('loader').classList.add('hide');
+    }, 400);
+  });
+  // por si el evento load ya pasó
+  setTimeout(function(){
+    document.getElementById('loader').classList.add('hide');
+  }, 900);
+
+  setTimeout(function(){
+    document.getElementById('hint').classList.add('fade');
+  }, 6500);
+
+})();
+</script>
+</body>
+</html>
